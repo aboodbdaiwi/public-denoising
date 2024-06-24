@@ -1,0 +1,116 @@
+function denoised_images = Xe_GLHOSVD(noisy_images, lung_mask, noise_mask, bvalues, kglobal, klocal, patchsize, sw, step)
+
+%% Function to denoise diffusion weighted HP Xe MRI images
+% Code is adapted from UCSF Hyperpolarized Technology Resource Center
+% 
+%
+% Inputs:
+%
+% noisy_images: the original 4D image set you want to denoise
+% lung_mask: mask containing lung signal only (bright airways should be excluded)
+% noise_mask: mask containing background noise, avoiding coherent artifacts
+% bvalues: vector containing the b-values for each image
+%  at CCHMC, b-values for Cartesian are [0, 6.25. 12.5, 18.75, 25]
+%            b-values for spiral are    [0, 10, 20, 30]
+%
+%
+% Optional inputs:
+%
+% kglobal: global thresholding scale factor, default set to 0.8
+% klocal: local thresholding scale factor, default set to 0.4
+% patchsize: size of patches selected within search windows, default set to 6
+% sw: search window sixe, detault set to 15
+% step: step size between search windows, default set to 2
+%
+%
+% Outputs:
+%
+% denoised_images: a 4D stack of denoised images, can be saved as NIFTI or other image formats
+%
+%
+% example command line use: Pretty_Images = Xe_GLHOSVD(diffusion_images, lung_mask, noise_mask, [0, 6.25. 12.5, 18.75, 25]); 
+%
+%
+% Questions? email stephanie.soderlund@cchmc.org
+%
+%
+%
+
+
+%% If denoising parameters not specified, use these defaults
+
+if ~exist('bvalues','var')
+    bvalues = 1;
+end
+
+if ~exist('kglobal','var')
+    kglobal = 0.4;
+end
+
+if ~exist('klocal','var')
+    klocal = 0.8;
+end
+
+if ~exist('patch','var')
+    patchsize = 6;
+end
+if ~exist('sw','var')
+    sw = 15;
+end
+
+if ~exist('step','var')
+    step = 2;
+end
+
+%% Calculate SNR for denoising input
+
+base_SNR = zeros(1, length(bvalues));
+base_noise_std = zeros(1, length(bvalues));
+base_signal = zeros(1, length(bvalues));
+for n = 1:length(bvalues)
+    %Calculating the siganl vector
+    signal_vec_base = noisy_images(:,:,:,n);
+    signal_vec_base(lung_mask==0)=[];
+    base_signal(n) = median(signal_vec_base);
+    %Calculating the noise vector
+    noise_vec_base = noisy_images(:,:,:,n);
+    noise_vec_base(noise_mask~=1)=[]; 
+    base_noise_std(n)= std(noise_vec_base);            %standard deviation of the noise
+    base_SNR(n) = base_signal(n) / base_noise_std(n);  %signal to noise ratio
+end
+
+%% Run VST (forward)
+psnr = base_SNR; 
+sigma = mean(base_noise_std);                  %std of noise
+VST_ABC = 'B';                                 %needed in VST code
+Im = riceVST(noisy_images,sigma,VST_ABC);           %apply variance-stabilizing transformation (fz is result)
+sigmafz = 1;                                   %standard deviation of noise in f(z)
+
+VST_signal = zeros(1, length(bvalues));
+VST_std_noise_base = zeros(1, length(bvalues));
+VST_SNR_base = zeros(1, length(bvalues));
+for n = 1:length(bvalues)
+    %Calculating the siganl vector
+    VST_signal_base = squeeze(Im(:,:,:,n));
+    VST_signal_base(lung_mask==0)=[];
+    VST_signal(n) = median(VST_signal_base);
+    %Calculating the noise vector
+    VST_noise_base = squeeze(Im(:,:,:,n));
+    VST_noise_base(noise_mask==0)=[];               
+    VST_std_noise_base (n)= std(VST_noise_base);            %the standard deviation of the noise
+    VST_SNR_base(n) = VST_signal(n) / VST_std_noise_base(n); %signal to noise ratio
+end
+
+%% Run GLHOSVD Denoising
+matrix_size = size(Im);
+
+VST_denoised_images = zeros(matrix_size);
+tmp = (Im(:,:,:,:));
+VST_denoised_images = glhosvd_flexible(tmp, mean(VST_std_noise_base), kglobal, klocal, patchsize, step, sw);
+
+disp('denoised')
+
+%% Inverse VST
+nu_hat = riceVST_EUI(VST_denoised_images,sigma,VST_ABC);   %% apply exact unbiased inverse for estimating nu
+denoised_images = squeeze(nu_hat); 
+end
