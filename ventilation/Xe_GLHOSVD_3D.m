@@ -19,22 +19,22 @@ function denoised_images = Xe_GLHOSVD_3D(noisy_images, lung_mask, noise_mask, kg
 %% If denoising parameters not specified, use these defaults
 
 if ~exist('kglobal','var')
-    kglobal = 0.4;
+    kglobal = 0.4; % 0.4
 end
 
 if ~exist('klocal','var')
-    klocal = 0.8;
+    klocal = 0.8; % 0.8
 end
 
 if ~exist('patch','var')
-    patchsize = 6;
+    patchsize = 3; % 6
 end
 if ~exist('sw','var')
-    sw = 15;
+    sw = 10; % 15
 end
 
 if ~exist('step','var')
-    step = 2;
+    step = 2; % 2
 end
 
 %% Calculate SNR for denoising input
